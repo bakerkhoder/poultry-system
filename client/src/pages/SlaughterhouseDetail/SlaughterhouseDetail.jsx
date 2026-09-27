@@ -1,21 +1,41 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState ,useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../components/Card/Card";
 import { Table, Td } from "../../components/DataTable/DataTable";
 import StatusBadge from "../../components/StatusBadge/StatusBadge";
 import IconButton from "../../components/IconButton/IconButton";
-import { EditIcon, TrashIcon, EyeIcon, FilterIcon, UsersIcon, PhoneIcon, PinIcon, ChevBackIcon, PlusIcon } from "../../components/Icons/Icons";
+import {
+  EditIcon,
+  TrashIcon,
+  EyeIcon,
+  FilterIcon,
+  UsersIcon,
+  PhoneIcon,
+  PinIcon,
+  ChevBackIcon,
+  PlusIcon,
+} from "../../components/Icons/Icons";
 import SelectWrap from "../../components/SelectWrap/SelectWrap";
 import SearchBar from "../../components/SearchBar/SearchBar";
 import Modal from "../../components/Modal/Modal";
 import ConfirmDeleteModal from "../../components/ConfirmDeleteModal/ConfirmDeleteModal";
-import { printVoucher, printWeeklyVoucherStatement } from "../../utils/printDocument";
+import {
+  printVoucher,
+  printWeeklyVoucherStatement,
+} from "../../utils/printDocument";
 import LoansRecordsCard from "../../components/LoansRecordsCard/LoansRecordsCard";
 import PartyPaymentForm from "../../components/PartyPaymentForm/PartyPaymentForm";
 import { loanRemaining, partyLoanTotals } from "../../utils/loanBalances";
 import { useSettings } from "../../context/SettingsContext";
-import { slaughterhousesApi, salesInvoicesApi, accountsSummaryApi, paymentsApi, loansApi } from "../../api/resources";
+import {
+  slaughterhousesApi,
+  salesInvoicesApi,
+  accountsSummaryApi,
+  paymentsApi,
+  loansApi,
+} from "../../api/resources";
 import "./SlaughterhouseDetail.css";
+import  { allocateInvoicePayments } from "../../utils/invoiceAllocations";
 
 function statusForInvoice(total, paid) {
   if (paid >= total && total > 0) return "مدفوع";
@@ -24,8 +44,12 @@ function statusForInvoice(total, paid) {
 }
 
 function DebtForm({ party, initial, onClose, onSubmit, currency }) {
-  const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : "");
-  const [date, setDate] = useState(initial?.date || new Date().toISOString().slice(0, 10));
+  const [amount, setAmount] = useState(
+    initial?.amount ? String(initial.amount) : "",
+  );
+  const [date, setDate] = useState(
+    initial?.date || new Date().toISOString().slice(0, 10),
+  );
   const [note, setNote] = useState(initial?.note || "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -43,7 +67,11 @@ function DebtForm({ party, initial, onClose, onSubmit, currency }) {
       await onSubmit({ amount: value, date, note: note || null });
       onClose();
     } catch (err) {
-      setError(err.payload?.conflict ? "تم تعديل هذا الدين من مكان آخر، أعد فتح الصفحة" : "تعذر حفظ الدين");
+      setError(
+        err.payload?.conflict
+          ? "تم تعديل هذا الدين من مكان آخر، أعد فتح الصفحة"
+          : "تعذر حفظ الدين",
+      );
     } finally {
       setSaving(false);
     }
@@ -51,14 +79,44 @@ function DebtForm({ party, initial, onClose, onSubmit, currency }) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="modal-field"><label>المسلخ</label><input value={party.name} disabled /></div>
-      <div className="modal-field"><label>مبلغ الدين ({currency})</label><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required /></div>
-      <div className="modal-field"><label>التاريخ</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
-      <div className="modal-field"><label>ملاحظة</label><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="سبب الدين (اختياري)" /></div>
+      <div className="modal-field">
+        <label>المسلخ</label>
+        <input value={party.name} disabled />
+      </div>
+      <div className="modal-field">
+        <label>مبلغ الدين ({currency})</label>
+        <input
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+        />
+      </div>
+      <div className="modal-field">
+        <label>التاريخ</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          required
+        />
+      </div>
+      <div className="modal-field">
+        <label>ملاحظة</label>
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="سبب الدين (اختياري)"
+        />
+      </div>
       {error && <p className="modal-error">{error}</p>}
       <div className="modal-actions">
-        <button type="button" className="btn-outline" onClick={onClose}>إلغاء</button>
-        <button type="submit" className="btn-primary" disabled={saving}>{saving ? "جارٍ الحفظ..." : "حفظ الدين"}</button>
+        <button type="button" className="btn-outline" onClick={onClose}>
+          إلغاء
+        </button>
+        <button type="submit" className="btn-primary" disabled={saving}>
+          {saving ? "جارٍ الحفظ..." : "حفظ الدين"}
+        </button>
       </div>
     </form>
   );
@@ -66,7 +124,9 @@ function DebtForm({ party, initial, onClose, onSubmit, currency }) {
 
 function WeeklyStatementModal({ onClose, onSubmit, submitting }) {
   const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 6 * 86400000)
+    .toISOString()
+    .slice(0, 10);
   const [fromDate, setFromDate] = useState(weekAgo);
   const [toDate, setToDate] = useState(today);
 
@@ -80,11 +140,21 @@ function WeeklyStatementModal({ onClose, onSubmit, submitting }) {
       <div className="field-row">
         <div className="modal-field">
           <label>من تاريخ</label>
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} required />
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            required
+          />
         </div>
         <div className="modal-field">
           <label>إلى تاريخ</label>
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} required />
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            required
+          />
         </div>
       </div>
       <div className="modal-actions">
@@ -108,14 +178,22 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
       : isEdit && initial.cages
         ? Array.from(
             { length: Number(initial.cages) },
-            () => (Number(initial.weightKg) || 0) / Number(initial.cages) + (Number(initial.cageWeight) || 0),
+            () =>
+              (Number(initial.weightKg) || 0) / Number(initial.cages) +
+              (Number(initial.cageWeight) || 0),
           )
         : [],
   );
   const [cageInput, setCageInput] = useState("");
-  const [cageCountInput, setCageCountInput] = useState(isEdit && initial.cages ? String(initial.cages) : "");
-  const [emptyCageWeight, setEmptyCageWeight] = useState(initial.cageWeight ? String(initial.cageWeight) : "8");
-  const [discount, setDiscount] = useState(initial.discount ? String(initial.discount) : "0");
+  const [cageCountInput, setCageCountInput] = useState(
+    isEdit && initial.cages ? String(initial.cages) : "",
+  );
+  const [emptyCageWeight, setEmptyCageWeight] = useState(
+    initial.cageWeight ? String(initial.cageWeight) : "8",
+  );
+  const [discount, setDiscount] = useState(
+    initial.discount ? String(initial.discount) : "0",
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -136,7 +214,10 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
 
   const totalWeight = cages.reduce((sum, c) => sum + c, 0);
   const cageCount = Number(cageCountInput) || 0;
-  const netWeight = Math.max(0, totalWeight - cageCount * (Number(emptyCageWeight) || 0));
+  const netWeight = Math.max(
+    0,
+    totalWeight - cageCount * (Number(emptyCageWeight) || 0),
+  );
   const kgPrice = Number(form.kgPrice) || 0;
   const discountAmount = Number(discount) || 0;
   const rawTotal = Math.round(netWeight * kgPrice);
@@ -171,7 +252,11 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
       });
       onClose();
     } catch (err) {
-      setError(err.payload?.conflict ? "تم تعديل هذه الفاتورة من مكان آخر، أعد المحاولة" : "تعذر الحفظ");
+      setError(
+        err.payload?.conflict
+          ? "تم تعديل هذه الفاتورة من مكان آخر، أعد المحاولة"
+          : "تعذر الحفظ",
+      );
     } finally {
       setSaving(false);
     }
@@ -185,8 +270,16 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
       </div>
       <div className="modal-field">
         <label>التاريخ</label>
-        <input type="date" value={form.date} onChange={set("date")} required disabled={isEdit} />
-        {isEdit && <p className="supplier-detail-field-note">التاريخ لا يمكن تعديله</p>}
+        <input
+          type="date"
+          value={form.date}
+          onChange={set("date")}
+          required
+          disabled={isEdit}
+        />
+        {isEdit && (
+          <p className="supplier-detail-field-note">التاريخ لا يمكن تعديله</p>
+        )}
       </div>
 
       <div className="modal-field">
@@ -212,8 +305,12 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
           <div className="package-list">
             {cages.map((w, i) => (
               <div key={i} className="package-list-item">
-                <span>وزن {i + 1}: {w} {settings.weightUnit}</span>
-                <button type="button" onClick={() => removeCage(i)}>×</button>
+                <span>
+                  وزن {i + 1}: {w} {settings.weightUnit}
+                </span>
+                <button type="button" onClick={() => removeCage(i)}>
+                  ×
+                </button>
               </div>
             ))}
           </div>
@@ -227,18 +324,36 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
         </div>
         <div className="modal-field">
           <label>عدد الأقفاص</label>
-          <input type="number" value={cageCountInput} onChange={(e) => setCageCountInput(e.target.value)} placeholder="أدخل العدد" required />
+          <input
+            type="number"
+            value={cageCountInput}
+            onChange={(e) => setCageCountInput(e.target.value)}
+            placeholder="أدخل العدد"
+            required
+          />
         </div>
       </div>
 
       <div className="field-row">
         <div className="modal-field">
           <label>أجرة الكيلو ({settings.currency})</label>
-          <input type="number" step="0.01" value={form.kgPrice} onChange={set("kgPrice")} required />
+          <input
+            type="number"
+            step="0.01"
+            value={form.kgPrice}
+            onChange={set("kgPrice")}
+            required
+          />
         </div>
         <div className="modal-field">
           <label>وزن القفص الفارغ ({settings.weightUnit})</label>
-          <input type="number" step="0.1" value={emptyCageWeight} onChange={(e) => setEmptyCageWeight(e.target.value)} required />
+          <input
+            type="number"
+            step="0.1"
+            value={emptyCageWeight}
+            onChange={(e) => setEmptyCageWeight(e.target.value)}
+            required
+          />
         </div>
       </div>
 
@@ -249,7 +364,11 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
         </div>
         <div className="modal-field">
           <label>الخصم ({settings.currency})</label>
-          <input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+          <input
+            type="number"
+            value={discount}
+            onChange={(e) => setDiscount(e.target.value)}
+          />
         </div>
       </div>
 
@@ -260,16 +379,27 @@ function InvoiceForm({ initial, isEdit, nextRef, onClose, onSubmit }) {
         </div>
         <div className="modal-field">
           <label>المبلغ المدفوع ({settings.currency})</label>
-          <input type="number" value={form.paid} onChange={set("paid")} required />
+          <input
+            type="number"
+            value={form.paid}
+            onChange={set("paid")}
+            required
+          />
         </div>
       </div>
-      <p className="supplier-detail-computed-total">المبلغ المتبقي: {remaining.toLocaleString("ar-SA")} {settings.currency}</p>
+      <p className="supplier-detail-computed-total">
+        المبلغ المتبقي: {remaining.toLocaleString("ar-SA")} {settings.currency}
+      </p>
       {error && <p className="modal-error">{error}</p>}
       <div className="modal-actions">
         <button type="button" className="btn-outline" onClick={onClose}>
           إلغاء
         </button>
-        <button type="submit" className="btn-primary" disabled={saving || cageCount === 0 || !kgPrice}>
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={saving || cageCount === 0 || !kgPrice}
+        >
           {saving ? "جارٍ الحفظ..." : "حفظ"}
         </button>
       </div>
@@ -303,18 +433,43 @@ export default function SlaughterhouseDetail() {
   const [loanHistory, setLoanHistory] = useState([]);
   const [editingPayment, setEditingPayment] = useState(null);
   const [deletingPayment, setDeletingPayment] = useState(null);
-
+  const effectivePaidById = useMemo(
+    () => allocateInvoicePayments(invoices, payments),
+    [invoices, payments],
+  );
   function reload() {
     setLoading(true);
-    Promise.all([slaughterhousesApi.getOne(id), salesInvoicesApi.list(), accountsSummaryApi.get(), loansApi.list(), paymentsApi.list(), loansApi.history("slaughterhouse", id)])
-      .then(([house, allInvoices, summary, allLoans, allPayments, allHistory]) => {
-        setSlaughterhouse(house);
-        setInvoices(allInvoices.filter((i) => i.slaughterhouse === house.name));
-        setComputed(summary.slaughterhouses.find((s) => s.id === id) || null);
-        setLoans(allLoans.filter((loan) => loan.partyType === "slaughterhouse" && loan.partyId === id));
-        setPayments(allPayments.filter((payment) => payment.partyType === "slaughterhouse" && payment.partyId === id));
-        setLoanHistory(allHistory);
-      })
+    Promise.all([
+      slaughterhousesApi.getOne(id),
+      salesInvoicesApi.list(),
+      accountsSummaryApi.get(),
+      loansApi.list(),
+      paymentsApi.list(),
+      loansApi.history("slaughterhouse", id),
+    ])
+      .then(
+        ([house, allInvoices, summary, allLoans, allPayments, allHistory]) => {
+          setSlaughterhouse(house);
+          setInvoices(
+            allInvoices.filter((i) => i.slaughterhouse === house.name),
+          );
+          setComputed(summary.slaughterhouses.find((s) => s.id === id) || null);
+          setLoans(
+            allLoans.filter(
+              (loan) =>
+                loan.partyType === "slaughterhouse" && loan.partyId === id,
+            ),
+          );
+          setPayments(
+            allPayments.filter(
+              (payment) =>
+                payment.partyType === "slaughterhouse" &&
+                payment.partyId === id,
+            ),
+          );
+          setLoanHistory(allHistory);
+        },
+      )
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }
@@ -324,8 +479,17 @@ export default function SlaughterhouseDetail() {
   const filteredInvoices = [...invoices]
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .filter((inv) => {
-      if (statusFilter !== "الكل" && statusForInvoice(inv.total, inv.paid || 0) !== statusFilter) return false;
-      if (refQuery && !inv.invoiceNumber?.toLowerCase().includes(refQuery.toLowerCase())) return false;
+      const effectivePaid = effectivePaidById[inv.id] ?? inv.paid ?? 0;
+      if (
+        statusFilter !== "الكل" &&
+        statusForInvoice(inv.total, effectivePaid) !== statusFilter
+      )
+        return false;
+      if (
+        refQuery &&
+        !inv.invoiceNumber?.toLowerCase().includes(refQuery.toLowerCase())
+      )
+        return false;
       if (dateFilter !== "الكل") {
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - Number(dateFilter));
@@ -333,7 +497,6 @@ export default function SlaughterhouseDetail() {
       }
       return true;
     });
-
   async function handlePrintWeeklyStatement(fromDate, toDate) {
     const printWin = window.open("", "_blank", "width=900,height=1000");
     setPreparingStatement(true);
@@ -343,41 +506,77 @@ export default function SlaughterhouseDetail() {
         paymentsApi.list(),
         loansApi.list(),
       ]);
-      const houseInvoices = allInvoicesForHouse.filter((i) => i.slaughterhouse === slaughterhouse.name);
-      const periodInvoices = houseInvoices.filter((i) => i.date >= fromDate && i.date <= toDate);
-      const houseLoans = loans.filter((l) => l.partyType === "slaughterhouse" && l.partyId === slaughterhouse.id);
-      const housePayments = payments.filter((p) => p.partyType === "slaughterhouse" && p.partyId === slaughterhouse.id);
-      const periodLoans = houseLoans.filter((l) => l.date >= fromDate && l.date <= toDate);
-      const periodPayments = housePayments.filter((p) => p.date >= fromDate && p.date <= toDate);
 
+      const houseInvoices = allInvoicesForHouse.filter(
+        (i) => i.slaughterhouse === slaughterhouse.name,
+      );
+      const houseLoans = loans.filter(
+        (l) =>
+          l.partyType === "slaughterhouse" && l.partyId === slaughterhouse.id,
+      );
+      const housePayments = payments.filter(
+        (p) =>
+          p.partyType === "slaughterhouse" && p.partyId === slaughterhouse.id,
+      );
+
+      const periodInvoices = houseInvoices.filter(
+        (i) => i.date >= fromDate && i.date <= toDate,
+      );
+      const periodLoans = houseLoans.filter(
+        (l) => l.date >= fromDate && l.date <= toDate,
+      );
+      // Payments dated inside this period — a payment made today for an old
+      // voucher will only show up if you print a statement covering today's date.
+      const periodPayments = housePayments.filter(
+        (p) => p.date >= fromDate && p.date <= toDate,
+      );
+
+      // Invoice totals: before this week vs. during this week
       const priorInvoicesTotal = houseInvoices
         .filter((i) => i.date < fromDate)
         .reduce((sum, i) => sum + (i.total || 0), 0);
-      const priorLoansTotal = houseLoans
-        .filter((l) => l.date < fromDate)
-        .reduce((sum, l) => sum + (l.amount || 0), 0);
-      const priorPaidOnInvoices = houseInvoices
-        .filter((i) => i.date < fromDate)
-        .reduce((sum, i) => sum + (i.paid || 0), 0);
-      const priorPaidViaLedger = housePayments
-        .filter((p) => p.date < fromDate)
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
-      const openingPaid = priorPaidOnInvoices + priorPaidViaLedger;
-      const openingBalance = priorInvoicesTotal + priorLoansTotal - priorPaidOnInvoices - priorPaidViaLedger;
+      const periodInvoicesTotal = periodInvoices.reduce(
+        (sum, i) => sum + (i.total || 0),
+        0,
+      );
 
-      const { outstanding: loansOutstanding } = partyLoanTotals(houseLoans, housePayments, "slaughterhouse", slaughterhouse.id);
+      // All money that cleared invoices, counted up to the END of the period
+      // (so a payment made late for last week's voucher still reduces "old unpaid")
+      const paidOnInvoices = houseInvoices
+        .filter((i) => i.date <= toDate)
+        .reduce((sum, i) => sum + (i.paid || 0), 0);
+      const ledgerPaidToInvoices = housePayments
+        .filter((p) => p.date <= toDate && !p.loanId) // loan repayments excluded
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+      const invoiceCredits = paidOnInvoices + ledgerPaidToInvoices;
+
+      // FIFO: credits clear the oldest invoices first
+      const oldUnpaidInvoices = Math.max(
+        0,
+        priorInvoicesTotal - invoiceCredits,
+      );
+      const creditLeft = Math.max(0, invoiceCredits - priorInvoicesTotal);
+      const currentUnpaidInvoices = Math.max(
+        0,
+        periodInvoicesTotal - creditLeft,
+      );
+
+      const { outstanding: loansOutstanding } = partyLoanTotals(
+        houseLoans,
+        housePayments,
+        "slaughterhouse",
+        slaughterhouse.id,
+      );
 
       printWeeklyVoucherStatement({
         settings,
         party: slaughterhouse,
         invoices: periodInvoices,
         loans: periodLoans,
-        allPartyLoans: houseLoans,
         payments: periodPayments,
-        openingBalance,
-        openingInvoiceBalance: priorInvoicesTotal,
-        openingLoanBalance: priorLoansTotal,
-        openingPaid,
+        oldUnpaidInvoices,
+        periodInvoicesTotal,
+        currentUnpaidInvoices,
         loansOutstanding,
         fmtMoney,
         fmtWeight,
@@ -390,12 +589,18 @@ export default function SlaughterhouseDetail() {
   }
 
   async function handleCreateInvoice(body) {
-    await salesInvoicesApi.create({ ...body, slaughterhouse: slaughterhouse.name });
+    await salesInvoicesApi.create({
+      ...body,
+      slaughterhouse: slaughterhouse.name,
+    });
     reload();
   }
 
   async function handleUpdateInvoice(body) {
-    await salesInvoicesApi.update(editingInvoice.id, { ...body, _expectedVersion: editingInvoice._version });
+    await salesInvoicesApi.update(editingInvoice.id, {
+      ...body,
+      _expectedVersion: editingInvoice._version,
+    });
     reload();
   }
 
@@ -406,12 +611,20 @@ export default function SlaughterhouseDetail() {
   }
 
   async function handleCreateLoan(body) {
-    await loansApi.create({ ...body, partyType: "slaughterhouse", partyId: slaughterhouse.id, partyName: slaughterhouse.name });
+    await loansApi.create({
+      ...body,
+      partyType: "slaughterhouse",
+      partyId: slaughterhouse.id,
+      partyName: slaughterhouse.name,
+    });
     reload();
   }
 
   async function handleUpdateLoan(body) {
-    await loansApi.update(editingLoan.id, { ...body, _expectedVersion: editingLoan._version });
+    await loansApi.update(editingLoan.id, {
+      ...body,
+      _expectedVersion: editingLoan._version,
+    });
     setEditingLoan(null);
     reload();
   }
@@ -423,7 +636,13 @@ export default function SlaughterhouseDetail() {
   }
 
   async function handleCreatePayment(body) {
-    await paymentsApi.create({ ...body, partyType: "slaughterhouse", partyId: slaughterhouse.id, partyName: slaughterhouse.name, ...(editingPayment?.loanId ? { loanId: editingPayment.loanId } : {}) });
+    await paymentsApi.create({
+      ...body,
+      partyType: "slaughterhouse",
+      partyId: slaughterhouse.id,
+      partyName: slaughterhouse.name,
+      ...(editingPayment?.loanId ? { loanId: editingPayment.loanId } : {}),
+    });
     reload();
   }
 
@@ -444,12 +663,17 @@ export default function SlaughterhouseDetail() {
   }
 
   if (loading) return <p className="state-message">جارٍ التحميل...</p>;
-  if (error) return <p className="state-message state-message-error">{error}</p>;
+  if (error)
+    return <p className="state-message state-message-error">{error}</p>;
   if (!slaughterhouse) return <p className="state-message">المسلخ غير موجود</p>;
 
   return (
     <div>
-      <button type="button" className="back-link" onClick={() => navigate("/slaughterhouses")}>
+      <button
+        type="button"
+        className="back-link"
+        onClick={() => navigate("/slaughterhouses")}
+      >
         <ChevBackIcon /> العودة الى المسالخ
       </button>
 
@@ -476,7 +700,10 @@ export default function SlaughterhouseDetail() {
           </div>
         </div>
         <div className="profile-card-actions">
-          <button className="btn-outline" onClick={() => setShowWeeklyStatement(true)}>
+          <button
+            className="btn-outline"
+            onClick={() => setShowWeeklyStatement(true)}
+          >
             🖨️ طباعة كشف أسبوعي
           </button>
           <button className="btn-primary" onClick={() => setShowAdd(true)}>
@@ -491,62 +718,120 @@ export default function SlaughterhouseDetail() {
       </div>
 
       <div className="page-head-actions invoice-toggle-actions">
-        <button className={activeTab === "invoices" ? "btn-primary" : "btn-outline"} onClick={() => setActiveTab("invoices")}>سجلات الفواتير</button>
-        <button className={activeTab === "loans" ? "btn-primary" : "btn-outline"} onClick={() => setActiveTab("loans")}>سجلات الديون</button>
+        <button
+          className={activeTab === "invoices" ? "btn-primary" : "btn-outline"}
+          onClick={() => setActiveTab("invoices")}
+        >
+          سجلات الفواتير
+        </button>
+        <button
+          className={activeTab === "loans" ? "btn-primary" : "btn-outline"}
+          onClick={() => setActiveTab("loans")}
+        >
+          سجلات الديون
+        </button>
       </div>
 
-      {activeTab === "invoices" && <Card>
-        <div className="card-head">
-          <div className="filters">
-            <SelectWrap icon={<FilterIcon />} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="الكل">جميع حالات الدفع</option>
-              <option value="مدفوع">مدفوع</option>
-              <option value="جزئي">مدفوع جزئي</option>
-              <option value="غير مدفوع">غير مدفوع</option>
-            </SelectWrap>
+      {activeTab === "invoices" && (
+        <Card>
+          <div className="card-head">
+            <div className="filters">
+              <SelectWrap
+                icon={<FilterIcon />}
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="الكل">جميع حالات الدفع</option>
+                <option value="مدفوع">مدفوع</option>
+                <option value="جزئي">مدفوع جزئي</option>
+                <option value="غير مدفوع">غير مدفوع</option>
+              </SelectWrap>
+            </div>
+            <SearchBar
+              placeholder="بحث برقم المرجع"
+              value={refQuery}
+              onChange={setRefQuery}
+            />
           </div>
-          <SearchBar placeholder="بحث برقم المرجع" value={refQuery} onChange={setRefQuery} />
-        </div>
-        {invoices.length === 0 && <p className="state-message">لا توجد فواتير مسجلة لهذا المسلخ</p>}
-        {invoices.length > 0 && filteredInvoices.length === 0 && <p className="state-message">لا توجد نتائج مطابقة للفلاتر المحددة</p>}
-        {filteredInvoices.length > 0 && (
-          <Table
-            columns={["التاريخ", "رقم المرجع", "الكمية (كغ)", "أجرة الكيلو", "المبلغ الإجمالي", "المبلغ المتبقي", "الحالة", "الإجراءات"]}
-            rows={filteredInvoices}
-            renderRow={(inv) => {
-              const remaining = Math.max(0, (inv.total || 0) - (inv.paid || 0));
-              return (
-                <>
-                  <Td className="td-muted" dir="ltr">{inv.date}</Td>
-                  <Td className="td-brand" dir="ltr">{inv.invoiceNumber}</Td>
-                  <Td dir="ltr">{fmtWeight(inv.weightKg)}</Td>
-                  <Td className="td-muted" dir="ltr">
-                    {inv.weightKg ? (inv.total / inv.weightKg).toFixed(2) : "0.00"} {settings.currency}
-                  </Td>
-                  <Td className="td-strong">{fmtMoney(inv.total)}</Td>
-                  <Td className={remaining > 0 ? "td-negative" : "td-faint"}>{remaining > 0 ? fmtMoney(remaining) : "—"}</Td>
-                  <Td>
-                    <StatusBadge status={statusForInvoice(inv.total, inv.paid || 0)} />
-                  </Td>
-                  <Td>
-                    <div className="row-actions">
-                      <IconButton label="تعديل" onClick={() => setEditingInvoice(inv)}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton label="حذف" tone="danger" onClick={() => setDeletingInvoice(inv)}>
-                        <TrashIcon />
-                      </IconButton>
-                      <IconButton label="عرض الفاتورة" onClick={() => setViewingInvoice(inv)}>
-                        <EyeIcon />
-                      </IconButton>
-                    </div>
-                  </Td>
-                </>
-              );
-            }}
-          />
-        )}
-      </Card>}
+          {invoices.length === 0 && (
+            <p className="state-message">لا توجد فواتير مسجلة لهذا المسلخ</p>
+          )}
+          {invoices.length > 0 && filteredInvoices.length === 0 && (
+            <p className="state-message">
+              لا توجد نتائج مطابقة للفلاتر المحددة
+            </p>
+          )}
+          {filteredInvoices.length > 0 && (
+            <Table
+              columns={[
+                "التاريخ",
+                "رقم المرجع",
+                "الكمية (كغ)",
+                "أجرة الكيلو",
+                "المبلغ الإجمالي",
+                "المبلغ المتبقي",
+                "الحالة",
+                "الإجراءات",
+              ]}
+              rows={filteredInvoices}
+              renderRow={(inv) => {
+                const effectivePaid =
+                  effectivePaidById[inv.id] ?? inv.paid ?? 0;
+                const remaining = Math.max(0, (inv.total || 0) - effectivePaid);
+                return (
+                  <>
+                    <Td className="td-muted" dir="ltr">
+                      {inv.date}
+                    </Td>
+                    <Td className="td-brand" dir="ltr">
+                      {inv.invoiceNumber}
+                    </Td>
+                    <Td dir="ltr">{fmtWeight(inv.weightKg)}</Td>
+                    <Td className="td-muted" dir="ltr">
+                      {inv.weightKg
+                        ? (inv.total / inv.weightKg).toFixed(2)
+                        : "0.00"}{" "}
+                      {settings.currency}
+                    </Td>
+                    <Td className="td-strong">{fmtMoney(inv.total)}</Td>
+                    <Td className={remaining > 0 ? "td-negative" : "td-faint"}>
+                      {remaining > 0 ? fmtMoney(remaining) : "—"}
+                    </Td>
+                    <Td>
+                      <StatusBadge
+                        status={statusForInvoice(inv.total, effectivePaid)}
+                      />
+                    </Td>
+                    <Td>
+                      <div className="row-actions">
+                        <IconButton
+                          label="تعديل"
+                          onClick={() => setEditingInvoice(inv)}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton
+                          label="حذف"
+                          tone="danger"
+                          onClick={() => setDeletingInvoice(inv)}
+                        >
+                          <TrashIcon />
+                        </IconButton>
+                        <IconButton
+                          label="عرض الفاتورة"
+                          onClick={() => setViewingInvoice(inv)}
+                        >
+                          <EyeIcon />
+                        </IconButton>
+                      </div>
+                    </Td>
+                  </>
+                );
+              }}
+            />
+          )}
+        </Card>
+      )}
 
       {activeTab === "loans" && (
         <LoansRecordsCard
@@ -557,7 +842,13 @@ export default function SlaughterhouseDetail() {
           fmtMoney={fmtMoney}
           onAddLoan={() => setEditingLoan({ isNew: true })}
           onAddPayment={() => setEditingPayment({ isNew: true })}
-          onSettleLoan={(loan, remaining) => setEditingPayment({ isNew: true, loanId: loan.id, loanAmount: remaining })}
+          onSettleLoan={(loan, remaining) =>
+            setEditingPayment({
+              isNew: true,
+              loanId: loan.id,
+              loanAmount: remaining,
+            })
+          }
           onEditLoan={(loan) => setEditingLoan(loan)}
           onDeleteLoan={(loan) => setDeletingLoan(loan)}
           onEditPayment={(entry) => setEditingPayment(entry)}
@@ -568,7 +859,14 @@ export default function SlaughterhouseDetail() {
       {showAdd && (
         <Modal title="إضافة طلبية جديدة" onClose={() => setShowAdd(false)}>
           <InvoiceForm
-            initial={{ date: new Date().toISOString().slice(0, 10), cages: "", weightKg: "", kgPrice: "", total: "", paid: "" }}
+            initial={{
+              date: new Date().toISOString().slice(0, 10),
+              cages: "",
+              weightKg: "",
+              kgPrice: "",
+              total: "",
+              paid: "",
+            }}
             isEdit={false}
             nextRef={`${settings.invoicePrefix || "SL"}${String(invoices.length + 1).padStart(3, "0")}`}
             onClose={() => setShowAdd(false)}
@@ -578,7 +876,11 @@ export default function SlaughterhouseDetail() {
       )}
 
       {showWeeklyStatement && (
-        <Modal title="طباعة كشف أسبوعي" subtitle={slaughterhouse.name} onClose={() => setShowWeeklyStatement(false)}>
+        <Modal
+          title="طباعة كشف أسبوعي"
+          subtitle={slaughterhouse.name}
+          onClose={() => setShowWeeklyStatement(false)}
+        >
           <WeeklyStatementModal
             onClose={() => setShowWeeklyStatement(false)}
             onSubmit={handlePrintWeeklyStatement}
@@ -588,7 +890,10 @@ export default function SlaughterhouseDetail() {
       )}
 
       {editingInvoice && (
-        <Modal title={`تعديل ${editingInvoice.invoiceNumber}`} onClose={() => setEditingInvoice(null)}>
+        <Modal
+          title={`تعديل ${editingInvoice.invoiceNumber}`}
+          onClose={() => setEditingInvoice(null)}
+        >
           <InvoiceForm
             initial={{
               invoiceNumber: editingInvoice.invoiceNumber,
@@ -597,7 +902,11 @@ export default function SlaughterhouseDetail() {
               weights: editingInvoice.weights || [],
               weightKg: String(editingInvoice.weightKg),
               cageWeight: String(editingInvoice.cageWeight ?? 8),
-              kgPrice: String(editingInvoice.weightKg ? (editingInvoice.total / editingInvoice.weightKg).toFixed(2) : 0),
+              kgPrice: String(
+                editingInvoice.weightKg
+                  ? (editingInvoice.total / editingInvoice.weightKg).toFixed(2)
+                  : 0,
+              ),
               discount: String(editingInvoice.discount || 0),
               total: String(editingInvoice.total),
               paid: String(editingInvoice.paid || 0),
@@ -617,9 +926,21 @@ export default function SlaughterhouseDetail() {
         />
       )}
 
-      {editingLoan && <Modal title={editingLoan.isNew ? "إضافة دين" : "تعديل الدين"} subtitle={slaughterhouse.name} onClose={() => setEditingLoan(null)}>
-        <DebtForm party={slaughterhouse} initial={editingLoan.isNew ? null : editingLoan} currency={settings.currency} onClose={() => setEditingLoan(null)} onSubmit={editingLoan.isNew ? handleCreateLoan : handleUpdateLoan} />
-      </Modal>}
+      {editingLoan && (
+        <Modal
+          title={editingLoan.isNew ? "إضافة دين" : "تعديل الدين"}
+          subtitle={slaughterhouse.name}
+          onClose={() => setEditingLoan(null)}
+        >
+          <DebtForm
+            party={slaughterhouse}
+            initial={editingLoan.isNew ? null : editingLoan}
+            currency={settings.currency}
+            onClose={() => setEditingLoan(null)}
+            onSubmit={editingLoan.isNew ? handleCreateLoan : handleUpdateLoan}
+          />
+        </Modal>
+      )}
       {deletingLoan && (
         <ConfirmDeleteModal
           message={`سيتم حذف سجل الدين بقيمة ${fmtMoney(deletingLoan.amount)}. يُفضّل عدم الحذف بعد أي تسديد — الديون المسدّدة تُخفى تلقائياً من القائمة.`}
@@ -629,7 +950,13 @@ export default function SlaughterhouseDetail() {
       )}
       {editingPayment && (
         <Modal
-          title={editingPayment.loanId ? "تسديد الدين" : editingPayment.isNew ? "تسجيل دفعة" : "تعديل الدفعة"}
+          title={
+            editingPayment.loanId
+              ? "تسديد الدين"
+              : editingPayment.isNew
+                ? "تسجيل دفعة"
+                : "تعديل الدفعة"
+          }
           subtitle={slaughterhouse.name}
           onClose={() => setEditingPayment(null)}
         >
@@ -643,7 +970,10 @@ export default function SlaughterhouseDetail() {
                   ? {
                       ...editingPayment,
                       loanAmount: loanRemaining(
-                        loans.find((l) => l.id === editingPayment.loanId) || { id: editingPayment.loanId, amount: 0 },
+                        loans.find((l) => l.id === editingPayment.loanId) || {
+                          id: editingPayment.loanId,
+                          amount: 0,
+                        },
                         payments,
                         { excludePaymentId: editingPayment.id },
                       ),
@@ -652,11 +982,19 @@ export default function SlaughterhouseDetail() {
             }
             currency={settings.currency}
             onClose={() => setEditingPayment(null)}
-            onSubmit={editingPayment.isNew ? handleCreatePayment : handleUpdatePayment}
+            onSubmit={
+              editingPayment.isNew ? handleCreatePayment : handleUpdatePayment
+            }
           />
         </Modal>
       )}
-      {deletingPayment && <ConfirmDeleteModal message={`سيتم حذف الدفعة بقيمة ${fmtMoney(deletingPayment.amount)} نهائياً.`} onConfirm={handleDeletePayment} onCancel={() => setDeletingPayment(null)} />}
+      {deletingPayment && (
+        <ConfirmDeleteModal
+          message={`سيتم حذف الدفعة بقيمة ${fmtMoney(deletingPayment.amount)} نهائياً.`}
+          onConfirm={handleDeletePayment}
+          onCancel={() => setDeletingPayment(null)}
+        />
+      )}
 
       {viewingInvoice && (
         <Modal title="معاينة الفاتورة" onClose={() => setViewingInvoice(null)}>
@@ -664,18 +1002,33 @@ export default function SlaughterhouseDetail() {
             <div className="purchase-voucher-banner">
               <div>
                 <p className="purchase-voucher-banner-label">رقم الفاتورة</p>
-                <p className="purchase-voucher-banner-code">{viewingInvoice.invoiceNumber}</p>
-                <p className="purchase-voucher-banner-date">{viewingInvoice.date}</p>
+                <p className="purchase-voucher-banner-code">
+                  {viewingInvoice.invoiceNumber}
+                </p>
+                <p className="purchase-voucher-banner-date">
+                  {viewingInvoice.date}
+                </p>
               </div>
               <div className="purchase-voucher-banner-title">
                 <p>فاتورة بيع</p>
                 <p className="purchase-voucher-banner-sub">الشيخ تشيكن</p>
               </div>
             </div>
-            <StatusBadge status={statusForInvoice(viewingInvoice.total, viewingInvoice.paid || 0)} />
-            <p className="purchase-voucher-section-label purchase-voucher-section-label-spaced">المسلخ</p>
-            <p className="purchase-voucher-supplier-name">{slaughterhouse.name}</p>
-            <p className="purchase-voucher-supplier-meta">{slaughterhouse.phone} — {slaughterhouse.region}</p>
+            <StatusBadge
+              status={statusForInvoice(
+                viewingInvoice.total,
+                viewingInvoice.paid || 0,
+              )}
+            />
+            <p className="purchase-voucher-section-label purchase-voucher-section-label-spaced">
+              المسلخ
+            </p>
+            <p className="purchase-voucher-supplier-name">
+              {slaughterhouse.name}
+            </p>
+            <p className="purchase-voucher-supplier-meta">
+              {slaughterhouse.phone} — {slaughterhouse.region}
+            </p>
             <div className="detail-list purchase-voucher-list">
               <div className="detail-row">
                 <span>عدد الأقفاص</span>
@@ -683,7 +1036,13 @@ export default function SlaughterhouseDetail() {
               </div>
               <div className="detail-row">
                 <span>الوزن الإجمالي</span>
-                <span>{fmtWeight((viewingInvoice.weightKg || 0) + (viewingInvoice.cages || 0) * (viewingInvoice.cageWeight ?? 8))}</span>
+                <span>
+                  {fmtWeight(
+                    (viewingInvoice.weightKg || 0) +
+                      (viewingInvoice.cages || 0) *
+                        (viewingInvoice.cageWeight ?? 8),
+                  )}
+                </span>
               </div>
               <div className="detail-row">
                 <span>المدفوع</span>
@@ -691,7 +1050,14 @@ export default function SlaughterhouseDetail() {
               </div>
               <div className="detail-row">
                 <span>المتبقي</span>
-                <span>{fmtMoney(Math.max(0, viewingInvoice.total - (viewingInvoice.paid || 0)))}</span>
+                <span>
+                  {fmtMoney(
+                    Math.max(
+                      0,
+                      viewingInvoice.total - (viewingInvoice.paid || 0),
+                    ),
+                  )}
+                </span>
               </div>
             </div>
             <div className="purchase-voucher-total">
@@ -699,13 +1065,29 @@ export default function SlaughterhouseDetail() {
               <span>{fmtMoney(viewingInvoice.total)}</span>
             </div>
             <div className="modal-actions">
-              <button type="button" className="btn-primary" onClick={() => printVoucher({ settings, invoice: viewingInvoice })}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() =>
+                  printVoucher({ settings, invoice: viewingInvoice })
+                }
+              >
                 🖨️ طباعة
               </button>
-              <button type="button" className="btn-outline" onClick={() => printVoucher({ settings, invoice: viewingInvoice })}>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() =>
+                  printVoucher({ settings, invoice: viewingInvoice })
+                }
+              >
                 ⬇️ تحميل
               </button>
-              <button type="button" className="btn-outline" onClick={() => setViewingInvoice(null)}>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => setViewingInvoice(null)}
+              >
                 إغلاق
               </button>
             </div>

@@ -10,9 +10,10 @@ import { EyeIcon, TrashIcon, PlusIcon } from "../../components/Icons/Icons";
 import SearchBar from "../../components/SearchBar/SearchBar";
 import ConfirmDeleteModal from "../../components/ConfirmDeleteModal/ConfirmDeleteModal";
 import { printVoucher } from "../../utils/printDocument";
+import { allocateInvoicePayments } from "../../utils/invoiceAllocations";
 import { useSettings } from "../../context/SettingsContext";
 import { useCollection } from "../../api/useCollection";
-import { salesInvoicesApi, slaughterhousesApi, dailyPricingApi } from "../../api/resources";
+import { salesInvoicesApi, slaughterhousesApi, dailyPricingApi, paymentsApi } from "../../api/resources";
 import "./SalesInvoices.css";
 
 function latestKgPrice(prices) {
@@ -24,6 +25,30 @@ function statusForInvoice(total, paid) {
   if (paid >= total && total > 0) return "مدفوع";
   if (paid > 0) return "جزئي";
   return "غير مدفوع";
+}
+
+// Ledger payments (paymentsApi) aren't reflected in each invoice's own
+// stored `paid` field, so allocate them per slaughterhouse (FIFO, oldest
+// invoice first) to get each invoice's real effective paid amount.
+function buildEffectivePaidById(invoices, payments) {
+  const invoicesByHouse = {};
+  for (const inv of invoices) {
+    const key = inv.slaughterhouse || "";
+    (invoicesByHouse[key] ||= []).push(inv);
+  }
+
+  const paymentsByHouse = {};
+  for (const p of payments) {
+    if (p.partyType !== "slaughterhouse") continue;
+    const key = p.partyName || "";
+    (paymentsByHouse[key] ||= []).push(p);
+  }
+
+  const merged = {};
+  for (const key of Object.keys(invoicesByHouse)) {
+    Object.assign(merged, allocateInvoicePayments(invoicesByHouse[key], paymentsByHouse[key] || []));
+  }
+  return merged;
 }
 
 function AddInvoiceView({ slaughterhouses, kgPrice, settings, fmtMoney, onCreate, onCreated, onBackToList }) {
@@ -294,7 +319,7 @@ function AddInvoiceView({ slaughterhouses, kgPrice, settings, fmtMoney, onCreate
   );
 }
 
-function ViewInvoiceView({ invoice, settings, fmtMoney, fmtWeight, onBack, onDelete }) {
+function ViewInvoiceView({ invoice, effectivePaid, settings, fmtMoney, fmtWeight, onBack, onDelete }) {
   return (
     <div>
       <div className="section-heading">
@@ -338,7 +363,7 @@ function ViewInvoiceView({ invoice, settings, fmtMoney, fmtWeight, onBack, onDel
           <div className="detail-row">
             <span>حالة الدفع</span>
             <span>
-              <StatusBadge status={statusForInvoice(invoice.total, invoice.paid || 0)} />
+              <StatusBadge status={statusForInvoice(invoice.total, effectivePaid)} />
             </span>
           </div>
         </div>
@@ -367,6 +392,7 @@ export default function SalesInvoices() {
   const { items: invoices, loading, error, create, remove } = useCollection(salesInvoicesApi);
   const { items: slaughterhouses } = useCollection(slaughterhousesApi);
   const { items: prices } = useCollection(dailyPricingApi);
+  const { items: payments } = useCollection(paymentsApi);
   const { settings, fmtMoney, fmtWeight } = useSettings();
   const [tab, setTab] = useState("سجل الفواتير");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
@@ -385,6 +411,8 @@ export default function SalesInvoices() {
   const filteredInvoiceList = invoices.filter(
     (i) => !invoiceQuery || i.invoiceNumber?.toLowerCase().includes(invoiceQuery.toLowerCase()) || i.slaughterhouse?.includes(invoiceQuery),
   );
+
+  const effectivePaidById = buildEffectivePaidById(invoices, payments);
 
   async function handleDeleteInvoice() {
     await remove(deletingInvoice.id);
@@ -416,35 +444,38 @@ export default function SalesInvoices() {
             <Table
               columns={["رقم الفاتورة", "اسم المسلخ", "التاريخ", "الوزن", "الخصم", "الاجمالي", "الحالة", "الإجراءات"]}
               rows={filteredInvoiceList}
-              renderRow={(inv) => (
-                <>
-                  <Td className="td-brand" dir="ltr">{inv.invoiceNumber}</Td>
-                  <Td>{inv.slaughterhouse}</Td>
-                  <Td className="td-muted" dir="ltr">{inv.date}</Td>
-                  <Td dir="ltr">{fmtWeight(inv.weightKg)}</Td>
-                  <Td>{inv.discount ? (typeof inv.discount === "number" ? fmtMoney(inv.discount) : inv.discount) : "—"}</Td>
-                  <Td className="td-strong">{fmtMoney(inv.total)}</Td>
-                  <Td>
-                    <StatusBadge status={statusForInvoice(inv.total, inv.paid || 0)} />
-                  </Td>
-                  <Td>
-                    <div className="row-actions">
-                      <IconButton label="حذف" tone="danger" onClick={() => setDeletingInvoice(inv)}>
-                        <TrashIcon />
-                      </IconButton>
-                      <IconButton
-                        label="عرض"
-                        onClick={() => {
-                          setSelectedInvoiceId(inv.id);
-                          setTab("عرض الفاتورة");
-                        }}
-                      >
-                        <EyeIcon />
-                      </IconButton>
-                    </div>
-                  </Td>
-                </>
-              )}
+              renderRow={(inv) => {
+                const effectivePaid = effectivePaidById[inv.id] ?? inv.paid ?? 0;
+                return (
+                  <>
+                    <Td className="td-brand" dir="ltr">{inv.invoiceNumber}</Td>
+                    <Td>{inv.slaughterhouse}</Td>
+                    <Td className="td-muted" dir="ltr">{inv.date}</Td>
+                    <Td dir="ltr">{fmtWeight(inv.weightKg)}</Td>
+                    <Td>{inv.discount ? (typeof inv.discount === "number" ? fmtMoney(inv.discount) : inv.discount) : "—"}</Td>
+                    <Td className="td-strong">{fmtMoney(inv.total)}</Td>
+                    <Td>
+                      <StatusBadge status={statusForInvoice(inv.total, effectivePaid)} />
+                    </Td>
+                    <Td>
+                      <div className="row-actions">
+                        <IconButton label="حذف" tone="danger" onClick={() => setDeletingInvoice(inv)}>
+                          <TrashIcon />
+                        </IconButton>
+                        <IconButton
+                          label="عرض"
+                          onClick={() => {
+                            setSelectedInvoiceId(inv.id);
+                            setTab("عرض الفاتورة");
+                          }}
+                        >
+                          <EyeIcon />
+                        </IconButton>
+                      </div>
+                    </Td>
+                  </>
+                );
+              }}
             />
           </Card>
         </>
@@ -465,6 +496,7 @@ export default function SalesInvoices() {
       {tab === "عرض الفاتورة" && selectedInvoice && (
         <ViewInvoiceView
           invoice={selectedInvoice}
+          effectivePaid={effectivePaidById[selectedInvoice.id] ?? selectedInvoice.paid ?? 0}
           settings={settings}
           fmtMoney={fmtMoney}
           fmtWeight={fmtWeight}

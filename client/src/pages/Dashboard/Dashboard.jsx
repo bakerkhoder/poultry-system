@@ -7,8 +7,9 @@ import { Table, Td } from "../../components/DataTable/DataTable";
 import { UsersIcon, ReceiptIcon, WalletIcon, TrendUpIcon, TrendDownIcon, CalendarIcon } from "../../components/Icons/Icons";
 import { useSettings } from "../../context/SettingsContext";
 import { purchaseCostForOrders } from "../../utils/purchaseCalc";
+import { allocateInvoicePayments } from "../../utils/invoiceAllocations";
 import { useCollection } from "../../api/useCollection";
-import { suppliersApi, slaughterhousesApi, salesInvoicesApi, purchaseOrdersApi, expensesApi, accountsSummaryApi } from "../../api/resources";
+import { suppliersApi, slaughterhousesApi, salesInvoicesApi, purchaseOrdersApi, expensesApi, accountsSummaryApi, paymentsApi } from "../../api/resources";
 import "./Dashboard.css";
 
 const ARABIC_WEEKDAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -65,6 +66,7 @@ export default function Dashboard() {
   const { items: invoices, loading: loadingInvoices, reload: reloadInvoices } = useCollection(salesInvoicesApi);
   const { items: purchaseOrders, loading: loadingOrders, reload: reloadOrders } = useCollection(purchaseOrdersApi);
   const { items: expenses, loading: loadingExpenses, reload: reloadExpenses } = useCollection(expensesApi);
+  const { items: payments, loading: loadingPayments, reload: reloadPayments } = useCollection(paymentsApi);
   const { settings, fmtMoney, fmtWeight } = useSettings();
   const [summary, setSummary] = useState({ suppliers: [] });
 
@@ -79,6 +81,7 @@ export default function Dashboard() {
       reloadInvoices();
       reloadOrders();
       reloadExpenses();
+      reloadPayments();
       accountsSummaryApi.get().then(setSummary);
     }
     const interval = setInterval(reloadAll, 30000);
@@ -87,9 +90,9 @@ export default function Dashboard() {
       clearInterval(interval);
       window.removeEventListener("focus", reloadAll);
     };
-  }, [reloadSuppliers, reloadSlaughterhouses, reloadInvoices, reloadOrders, reloadExpenses]);
+  }, [reloadSuppliers, reloadSlaughterhouses, reloadInvoices, reloadOrders, reloadExpenses, reloadPayments]);
 
-  const loading = loadingSuppliers || loadingSlaughterhouses || loadingInvoices || loadingOrders || loadingExpenses;
+  const loading = loadingSuppliers || loadingSlaughterhouses || loadingInvoices || loadingOrders || loadingExpenses || loadingPayments;
 
   const today = daysAgoString(0);
   const weekStart = daysAgoString(6);
@@ -111,8 +114,33 @@ export default function Dashboard() {
   const supplierDebt = summary.suppliers.reduce((sum, s) => sum + (s.remaining || 0), 0);
   const suppliersWithDebt = summary.suppliers.filter((s) => s.remaining > 0);
 
+  // Ledger payments (paymentsApi) aren't reflected in each invoice's own
+  // stored `paid` field, so allocate them per slaughterhouse (FIFO, oldest
+  // invoice first) to get each invoice's real effective paid amount.
+  const effectivePaidById = (() => {
+    const invoicesByHouse = {};
+    for (const inv of invoices) {
+      const key = inv.slaughterhouse || "";
+      (invoicesByHouse[key] ||= []).push(inv);
+    }
 
-  const uncollectedInvoices = invoices.filter((i) => (i.total || 0) - (i.paid || 0) > 0);
+    const paymentsByHouse = {};
+    for (const p of payments) {
+      if (p.partyType !== "slaughterhouse") continue;
+      const key = p.partyName || "";
+      (paymentsByHouse[key] ||= []).push(p);
+    }
+
+    const merged = {};
+    for (const key of Object.keys(invoicesByHouse)) {
+      Object.assign(merged, allocateInvoicePayments(invoicesByHouse[key], paymentsByHouse[key] || []));
+    }
+    return merged;
+  })();
+
+  const uncollectedInvoices = invoices.filter(
+    (i) => (i.total || 0) - (effectivePaidById[i.id] ?? i.paid ?? 0) > 0
+  );
 
   const chartData = buildWeeklyChart(invoices, purchaseOrders);
 
@@ -271,16 +299,19 @@ export default function Dashboard() {
                 <Table
                   columns={["العميل", "التاريخ", "المبلغ", "الحالة"]}
                   rows={recentSales}
-                  renderRow={(inv) => (
-                    <>
-                      <Td className="td-strong">{inv.slaughterhouse}</Td>
-                      <Td className="td-muted" dir="ltr">{inv.date}</Td>
-                      <Td>{fmtMoney(inv.total)}</Td>
-                      <Td>
-                        <StatusBadge status={statusForInvoice(inv.total, inv.paid || 0)} />
-                      </Td>
-                    </>
-                  )}
+                  renderRow={(inv) => {
+                    const effectivePaid = effectivePaidById[inv.id] ?? inv.paid ?? 0;
+                    return (
+                      <>
+                        <Td className="td-strong">{inv.slaughterhouse}</Td>
+                        <Td className="td-muted" dir="ltr">{inv.date}</Td>
+                        <Td>{fmtMoney(inv.total)}</Td>
+                        <Td>
+                          <StatusBadge status={statusForInvoice(inv.total, effectivePaid)} />
+                        </Td>
+                      </>
+                    );
+                  }}
                 />
               )}
             </Card>

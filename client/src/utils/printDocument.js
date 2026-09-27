@@ -307,58 +307,89 @@ export function printAccountStatement({ settings, row, isSuppliers, entries, fmt
   openPrintDocument(html);
 }
 
-export function printWeeklyVoucherStatement({ settings, party, invoices, loans = [], allPartyLoans = [], payments = [], openingBalance, openingInvoiceBalance = 0, openingLoanBalance = 0, openingPaid = 0, loansOutstanding, fmtMoney, fmtWeight, existingWin }) {
-  const loanCatalog = allPartyLoans.length > 0 ? allPartyLoans : loans;
+export function printWeeklyVoucherStatement({
+  settings,
+  party,
+  invoices,
+  loans = [],
+  payments = [],
+  oldUnpaidInvoices = 0,
+  periodInvoicesTotal = 0,
+  currentUnpaidInvoices = 0,
+  loansOutstanding = 0,
+  fmtMoney,
+  fmtWeight,
+  existingWin,
+}) {
   const movements = [
-    ...invoices.map((i) => ({ date: i.date, reference: i.invoiceNumber, weight: fmtWeight(i.weightKg), invoiceDebt: i.total || 0, loanDebt: 0, paid: i.paid || 0, createdAt: i.createdAt })),
-    ...loans.map((l) => ({ date: l.date, reference: l.note ? `دين — ${l.note}` : "إضافة دين", weight: "—", invoiceDebt: 0, loanDebt: l.amount || 0, paid: 0, createdAt: l.createdAt })),
+    ...invoices.map((i) => ({
+      date: i.date,
+      reference: i.invoiceNumber,
+      weight: fmtWeight(i.weightKg),
+      invoiceDebt: i.total || 0,
+      loanDebt: 0,
+      paid: 0,
+      createdAt: i.createdAt,
+    })),
+    ...loans.map((l) => ({
+      date: l.date,
+      reference: l.note ? `دين — ${l.note}` : "إضافة دين",
+      weight: "—",
+      invoiceDebt: 0,
+      loanDebt: l.amount || 0,
+      paid: 0,
+      createdAt: l.createdAt,
+    })),
     ...payments.map((p) => ({
       date: p.date,
-      reference: paymentMovementLabel(p, loanCatalog.find((l) => l.id === p.loanId)),
+      reference: paymentMovementLabel(p, loans.find((l) => l.id === p.loanId)),
       weight: "—",
       invoiceDebt: 0,
       loanDebt: 0,
       paid: p.amount || 0,
       createdAt: p.createdAt,
     })),
-  ].sort((a, b) => (a.date === b.date ? (a.createdAt || "").localeCompare(b.createdAt || "") : a.date.localeCompare(b.date)));
-  let balance = openingBalance;
-  const rows = movements.map((movement) => {
-    balance += movement.invoiceDebt + movement.loanDebt - movement.paid;
-    return [
-      movement.date,
-      movement.reference,
-      movement.weight,
-      movement.invoiceDebt ? fmtMoney(movement.invoiceDebt) : "—",
-      movement.loanDebt ? fmtMoney(movement.loanDebt) : "—",
-      movement.paid ? fmtMoney(movement.paid) : "—",
-      formatLedgerBalance(balance, fmtMoney),
-    ];
-  });
-  const periodInvoiceDebt = movements.reduce((sum, movement) => sum + movement.invoiceDebt, 0);
-  const periodLoanDebt = movements.reduce((sum, movement) => sum + movement.loanDebt, 0);
-  const periodPaid = movements.reduce((sum, movement) => sum + movement.paid, 0);
-  const invoicesTotal = openingInvoiceBalance + periodInvoiceDebt;
-  const loansTotal = openingLoanBalance + periodLoanDebt;
-  const totalDue = invoicesTotal + loansTotal;
-  const totalPaid = openingPaid + periodPaid;
+  ].sort((a, b) =>
+    a.date === b.date
+      ? (a.createdAt || "").localeCompare(b.createdAt || "")
+      : a.date.localeCompare(b.date)
+  );
 
+  const rows = movements.map((m) => [
+    m.date,
+    m.reference,
+    m.weight,
+    m.invoiceDebt ? fmtMoney(m.invoiceDebt) : "—",
+    m.loanDebt ? fmtMoney(m.loanDebt) : "—",
+    m.paid ? fmtMoney(m.paid) : "—",
+  ]);
+
+  // Amount the applicant pays against this voucher
+  const amountDue = oldUnpaidInvoices + currentUnpaidInvoices;
+  const total = amountDue + loansOutstanding;
+  const oldsum=loansOutstanding+oldUnpaidInvoices;
   const html = `
     ${letterheadHtml(settings)}
     <p class="doc-title">${escapeHtml(party.name)}</p>
     <p class="doc-subtitle">كشف فواتير أسبوعي</p>
-    ${accountSummaryHtml({
-      fmtMoney,
-      invoicesTotal,
-      loansTotal,
-      loansOutstanding,
-      totalDue,
-      paid: totalPaid,
-      remaining: balance,
-      highlight: true,
-    })}
+    <div class="doc-summary">
+      <div class="row"><span>الفواتير والعمليات القديمة غير المدفوعة</span><b>   ${fmtMoney(oldUnpaidInvoices)}</b></div>
+      <div class="row muted"><span>الدين المتبقي</span><b>   ${fmtMoney(loansOutstanding)}</b></div>
+      <div class="row"><span>مجموع القديم</span><b>   ${fmtMoney(oldsum)}</b></div>
+      <div class="row"><span>فواتير وعمليات هذا الأسبوع</span><b>   ${fmtMoney(periodInvoicesTotal)}</b></div>
+      <div class="row muted"><span>المجموع المتبقي</span><b>   ${fmtMoney(total)}</b></div>
+    </div>
     <table class="doc-table doc-table-highlight">
-      <thead><tr><th>التاريخ</th><th>البيان</th><th>الوزن الصافي</th><th>الفواتير والعمليات</th><th>الدين المضاف</th><th>المبالغ المدفوعة</th><th>المتبقي</th></tr></thead>
+      <thead>
+        <tr>
+          <th>التاريخ</th>
+          <th>البيان</th>
+          <th>الوزن الصافي</th>
+          <th>الفواتير والعمليات</th>
+          <th>الدين المضاف</th>
+          <th>المبالغ المدفوعة</th>
+        </tr>
+      </thead>
       <tbody>
         ${rows.map((r) => `<tr>${r.map((v) => `<td>${escapeHtml(v)}</td>`).join("")}</tr>`).join("")}
       </tbody>
